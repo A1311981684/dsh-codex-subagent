@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Codex subagent (dsh-codex-subagent)",
+    "description": "Codex CLI (codex-dev) as a DSH subagent with an inspectable child session: one codex-dev process per delegation, projected into a durable read-only Session."
+  }
+}

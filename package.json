@@ -1,0 +1,71 @@
+{
+  "name": "dsh-codex-subagent",
+  "version": "0.1.0",
+  "description": "Codex CLI (codex-dev) as a DSH subagent: one codex-dev child process per delegation, projected into an inspectable, durable DSH child session",
+  "author": "Asta Zhao",
+  "license": "MIT",
+  "type": "module",
+  "main": "./lib/index.js",
+  "bin": {
+    "codex-dev": "./bin/codex-dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/A1311981684/dsh-codex-subagent.git"
+  },
+  "homepage": "https://github.com/A1311981684/dsh-codex-subagent",
+  "bugs": {
+    "url": "https://github.com/A1311981684/dsh-codex-subagent/issues"
+  },
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib",
+    "icon.svg",
+    "bin",
+    "rules",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "LICENSE",
+    "README.md",
+    "README.zh.md",
+    "scripts",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "plugin",
+    "subagent",
+    "codex"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.2-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.2.2-rc.1+": "compatible"
+      }
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "test:real": "node test/real-codex.mjs"
+  },
+  "icon": "./icon.svg"
+}

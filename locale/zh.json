@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Codex 子智能体（dsh-codex-subagent）",
+    "description": "把本机的 Codex CLI（codex-dev）接成 DSH 子智能体：每次派活起一个 codex-dev 进程，运行过程和结果投影成 DSH 里可查看、可持久化的只读子会话。"
+  }
+}

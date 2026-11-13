@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+# codex-dev — run one development task through the local Codex CLI.
+#
+# Usage:
+#   codex-dev --brief <file|-> [--cwd dir] [--model model] [--thinking level]
+#             [--mode text|json] [--log file] [--session-id thread-id]
+#             [--session-dir dir] [--sandbox mode] [--bypass]
+#
+# The fixed rules (rules/CODEX-DEV-RULES.md next to this script) are prepended
+# to the brief. Every run uses its own CODEX_HOME: the user's ~/.codex stays
+# read-only (only config.toml and auth.json are copied in, when present), and
+# sessions live in the plugin's own state directory instead of polluting the
+# user's `codex resume` list.
+#
+# `--session-id` is a Codex thread id (the `thread_id` that `codex exec --json`
+# reports in its `thread.started` record): the run then continues that stored
+# thread. Without it a fresh thread is started; when a session directory was
+# given, its state is kept so a later `--session-id <thread>` can continue it.
+set -euo pipefail
+
+# Resolve this script's real path before taking its directory: `npm install -g`
+# symlinks bin/codex-dev into node_modules/.bin, so $0 is the link and dirname $0
+# would point at .bin, where there is no ../rules. `readlink -f` is GNU-only and
+# absent on BSD/macOS, so walk the symlink chain by hand: POSIX `readlink` reads
+# one link, relative targets are joined to the link's directory, and the walk is
+# capped to survive a symlink loop. Nothing here may abort the run under
+# `set -e`: readlink failures are swallowed, and if the chain never resolves the
+# rule-file check below still reports a clear "fixed rules not found".
+self=$0
+hops=0
+while [ -h "$self" ] && [ "$hops" -lt 40 ]; do
+  hops=$((hops + 1))
+  target=$(readlink "$self" 2>/dev/null) || target=""
+  [ -n "$target" ] || break
+  case $target in
+    /*) self=$target ;;
+    *)  self=$(dirname "$self")/$target ;;
+  esac
+done
+SCRIPT_DIR=$(cd -P "$(dirname "$self")" 2>/dev/null && pwd) \
+  || SCRIPT_DIR=$(cd -P "$(dirname "$0")" 2>/dev/null && pwd) \
+  || SCRIPT_DIR=$(dirname "$0")
+
+CODEX_BIN=${CODEX_BIN:-codex}
+RULES=${CODEX_DEV_RULES:-$SCRIPT_DIR/../rules/CODEX-DEV-RULES.md}
+# No model is pinned here on purpose: the copied config.toml already names the
+# user's model (DeepSeek), so a run follows the same model as an interactive
+# `codex`. CODEX_DEV_MODEL / --model override it when a caller wants to.
+DEFAULT_MODEL=${CODEX_DEV_MODEL:-}
+DEFAULT_SANDBOX=workspace-write
+
+die() { printf 'codex-dev: %s\n' "$*" >&2; exit 2; }
+
+usage() {
+  cat <<'EOF'
+Usage: codex-dev --brief <file|-> [options]
+
+  --brief <file|->   Brief file; - reads it from standard input (required)
+  --cwd <dir>        Working directory, defaults to the current directory
+  --model <model>    Override the model (default: whatever config.toml names;
+                     set CODEX_DEV_MODEL to change the default)
+  --thinking <level> Reasoning effort, passed as
+                     -c model_reasoning_effort=<level>
+  --mode <mode>      text (default) or json: json adds --json, so stdout is
+                     Codex's NDJSON event stream; text omits it and stdout is
+                     only the final answer.
+  --log <file>       Also record the full output (stdout and stderr) to this file
+  --session-id <id>  Continue the stored Codex thread with this id instead of
+                     starting a new one
+  --session-dir <dir>
+                     Where Codex keeps its state for these runs; the run uses
+                     <dir>/home as CODEX_HOME (default $HOME/.dsh/codex-sessions)
+  --sandbox <mode>   read-only, workspace-write (default), or danger-full-access
+  --bypass           Pass --dangerously-bypass-approvals-and-sandbox
+  -h, --help         Show this text
+
+The fixed rules are prepended to the brief automatically. The brief is written
+by whoever delegates the task.
+EOF
+}
+
+brief=""
+cwd="$PWD"
+model=""
+thinking=""
+mode="text"
+log=""
+session_id=""
+session_dir=""
+sandbox="$DEFAULT_SANDBOX"
+bypass=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --brief)    [ $# -ge 2 ] || die "--brief needs a file path or -"; brief=$2; shift 2 ;;
+    --cwd)      [ $# -ge 2 ] || die "--cwd needs a directory"; cwd=$2; shift 2 ;;
+    --model)    [ $# -ge 2 ] || die "--model needs a model name"; model=$2; shift 2 ;;
+    --thinking) [ $# -ge 2 ] || die "--thinking needs a level"; thinking=$2; shift 2 ;;
+    --mode)     [ $# -ge 2 ] || die "--mode needs text or json"; mode=$2; shift 2 ;;
+    --log)      [ $# -ge 2 ] || die "--log needs a file path"; log=$2; shift 2 ;;
+    --session-id) [ $# -ge 2 ] || die "--session-id needs a thread id"; session_id=$2; shift 2 ;;
+    --session-dir) [ $# -ge 2 ] || die "--session-dir needs a directory"; session_dir=$2; shift 2 ;;
+    --sandbox)  [ $# -ge 2 ] || die "--sandbox needs read-only, workspace-write or danger-full-access"; sandbox=$2; shift 2 ;;
+    --bypass)   bypass=1; shift ;;
+    -h|--help)  usage; exit 0 ;;
+    *)          die "unknown argument: $1 (see --help)" ;;
+  esac
+done
+
+case "$mode" in
+text|json) ;;
+*) die "--mode must be text or json, got: $mode" ;;
+esac
+case "$sandbox" in
+read-only|workspace-write|danger-full-access) ;;
+*) die "--sandbox must be read-only, workspace-write or danger-full-access, got: $sandbox" ;;
+esac
+
+[ -n "$brief" ] || die "missing --brief (the brief file, or - for standard input)"
+command -v "$CODEX_BIN" >/dev/null 2>&1 || die "Codex CLI not found: $CODEX_BIN (install it or set CODEX_BIN)"
+[ -r "$RULES" ] || die "fixed rules not found: $RULES (set CODEX_DEV_RULES or keep rules/CODEX-DEV-RULES.md next to this script)"
+[ -d "$cwd" ] || die "working directory does not exist: $cwd"
+
+if [ "$brief" = "-" ]; then
+  brief_text=$(cat)
+else
+  [ -r "$brief" ] || die "cannot read the brief: $brief"
+  brief_text=$(cat "$brief")
+fi
+[ -n "${brief_text//[[:space:]]/}" ] || die "the brief is empty"
+
+# Which CODEX_HOME this run uses, and whether it outlives the run:
+#  * --session-id: the thread is stored under the session directory, so the
+#    state must be persistent for `codex exec resume` to find it;
+#  * --session-dir / CODEX_DEV_SESSION_DIR without an id: keep the fresh thread
+#    there too, so its thread id can be continued later;
+#  * neither: a throwaway directory, removed on exit (the home directory is
+#    read-only inside a DSH sandbox, so Codex must not write to ~/.codex).
+ephemeral_home=""
+if [ -n "$session_id" ]; then
+  [ -n "$session_dir" ] || session_dir=${CODEX_DEV_SESSION_DIR:-${HOME:-}/.dsh/codex-sessions}
+elif [ -n "$session_dir" ]; then
+  :
+else
+  session_dir=${CODEX_DEV_SESSION_DIR:-}
+fi
+if [ -n "$session_dir" ]; then
+  CODEX_HOME=$session_dir/home
+  mkdir -p "$CODEX_HOME" || die "cannot create the Codex state directory: $CODEX_HOME"
+else
+  ephemeral_home=$(mktemp -d "${TMPDIR:-/tmp}/codex-dev-state.XXXXXX")
+  trap 'rm -rf "$ephemeral_home"' EXIT
+  CODEX_HOME=$ephemeral_home
+fi
+chmod 700 "$CODEX_HOME" 2>/dev/null || true
+export CODEX_HOME
+
+# Seed the private state directory with the user's provider config and login,
+# read-only from the user's own installation. Secret material is copied, never
+# printed, and the copy is owner-only.
+home_src=${CODEX_HOME_SRC:-${HOME:-}/.codex}
+if [ -f "$home_src/config.toml" ]; then
+  cp "$home_src/config.toml" "$CODEX_HOME/config.toml" \
+    || die "cannot copy $home_src/config.toml into $CODEX_HOME"
+fi
+if [ -f "$home_src/auth.json" ]; then
+  cp "$home_src/auth.json" "$CODEX_HOME/auth.json" \
+    || die "cannot copy $home_src/auth.json into $CODEX_HOME"
+  chmod 600 "$CODEX_HOME/auth.json" 2>/dev/null || true
+fi
+
+# Credentials, in order of precedence:
+#  1. an existing DEEPSEEK_API_KEY wins and is left untouched;
+#  2. a private $CODEX_HOME/auth.json (just copied from the user's own
+#     `codex login`) is enough: Codex then authenticates natively and the run
+#     must not demand a DeepSeek key;
+#  3. otherwise reuse the credential the local Pi installation saved, but only
+#     in the environment: never print it, never write it to disk.
+# When none of the three exists the run cannot authenticate, so it fails with a
+# message naming all three routes.
+if [ -z "${DEEPSEEK_API_KEY:-}" ] && [ ! -f "$CODEX_HOME/auth.json" ]; then
+  auth_file="${HOME:-}/.pi/agent/auth.json"
+  [ -r "$auth_file" ] \
+    || die "no credential for Codex: set DEEPSEEK_API_KEY, run 'codex login' (its auth.json is copied into the private CODEX_HOME), or save a DeepSeek key with: pi auth login deepseek (looked for $auth_file)"
+  DEEPSEEK_API_KEY=$(node --input-type=module -e '
+import { readFileSync } from "node:fs";
+try {
+  const data = JSON.parse(readFileSync(process.argv[1], "utf8"));
+  const key = data?.deepseek?.key;
+  if (typeof key !== "string" || key === "") process.exit(1);
+  process.stdout.write(key);
+} catch {
+  process.exit(1);
+}
+' "$auth_file") || die "could not read the DeepSeek credential from $auth_file (.deepseek.key); set DEEPSEEK_API_KEY, run 'codex login', or run: pi auth login deepseek"
+  export DEEPSEEK_API_KEY
+fi
+
+prompt=$(printf '%s\n\n---\n\n# 本次任务\n\n%s\n' "$(cat "$RULES")" "$brief_text")
+
+[ -n "$model" ] || model=$DEFAULT_MODEL
+
+# Shared switches in a fixed order so a caller (and the tests) can read the
+# argv. `-c model_reasoning_effort=...` is a config override, which both
+# `codex exec` and `codex exec resume` accept.
+json_flag=()
+[ "$mode" = json ] && json_flag+=(--json)
+extra=()
+[ -n "$model" ] && extra+=(-m "$model")
+[ -n "$thinking" ] && extra+=(-c "model_reasoning_effort=$thinking")
+[ "$bypass" = 1 ] && extra+=(--dangerously-bypass-approvals-and-sandbox)
+
+if [ -n "$session_id" ]; then
+  # `codex exec resume` has no -s/--sandbox and no -C/--cd: the resumed thread
+  # keeps the working directory recorded with it, so the caller's cwd is not
+  # passed. The sandbox is different: measured against codex-cli 0.168.0, a
+  # thread created with `-s read-only` could still write when resumed with
+  # `-c sandbox_mode=workspace-write`, so the config override DOES take effect
+  # on a continuation: it is passed here instead of `-s`, so a resumed thread
+  # uses the caller's policy rather than the one recorded when it started.
+  args=(exec resume "$session_id" "${json_flag[@]}" --skip-git-repo-check -c "sandbox_mode=$sandbox" "${extra[@]}" -- "$prompt")
+else
+  args=(exec "${json_flag[@]}" --skip-git-repo-check --cd "$cwd" -s "$sandbox" "${extra[@]}" -- "$prompt")
+fi
+
+cd "$cwd"
+started_at=$(date '+%F %T')
+
+if [ -n "$log" ]; then
+  mkdir -p "$(dirname "$log")" 2>/dev/null || true
+  set +e
+  # stdout goes to the caller through tee (still exactly Codex's stdout, so a
+  # json run stays pure NDJSON); stderr is teed to the same file and back to
+  # stderr, so both streams are recorded and neither is mixed into the other.
+  exec 5> >(tee -a "$log" >&2)
+  stderr_tee=$!
+  "$CODEX_BIN" "${args[@]}" 2>&5 | tee -a "$log"
+  rc=${PIPESTATUS[0]}
+  exec 5>&-
+  wait "$stderr_tee" 2>/dev/null || true
+  set -e
+else
+  set +e
+  "$CODEX_BIN" "${args[@]}"
+  rc=$?
+  set -e
+fi
+
+# Delegation record: one line per run, so it is easy to see afterwards who
+# delegated what and which model ran. Skip it when the directory is read-only;
+# it must never block the task.
+record_dir=${CODEX_DEV_RECORD_DIR:-${HOME:-}/.dsh}
+brief_first=$(printf '%s\n' "$brief_text" \
+  | grep -v '^[[:space:]]*$' | grep -v '^#' | head -n 1 | cut -c 1-60)
+[ -n "$brief_first" ] || brief_first=$(printf '%s\n' "$brief_text" | grep -v '^[[:space:]]*$' | head -n 1 | cut -c 1-60)
+record_model=${model:-default}
+if mkdir -p "$record_dir" 2>/dev/null \
+   && printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "${rc}" "$record_model" "$cwd" "$started_at" "$(date '+%F %T')" "$brief_first" \
+      >> "$record_dir/codex-delegations.log" 2>/dev/null; then
+  :
+fi
+
+exit "$rc"
