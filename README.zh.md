@@ -19,6 +19,17 @@ Codex 的 `--json` NDJSON 事件流按行边收边投影：一次 Codex turn 一
 Codex 自己的 thread 继续用）、**有日志**（summary 或 full，另加派活记录）。两者不要同时作为
 编码后端启用：那样模型会看到两个互相竞争的 Codex 工具。
 
+## 截图
+
+DSH 插件页里的卡片、一次派活生成的只读子会话、以及同一子会话续接第二次的样子（这几张也附在
+市场收录申请里）：
+
+![DSH 插件页里的卡片](docs/screenshots/01-plugin-installed.png)
+
+![一次派活生成的只读子会话](docs/screenshots/02-child-session.png)
+
+![同一子会话续接第二次](docs/screenshots/03-child-session-continued.png)
+
 ## 薄壳：只做两件事
 
 怎么跑 Codex，插件几乎不管，全由 `codex-dev` 决定：

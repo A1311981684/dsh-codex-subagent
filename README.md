@@ -24,6 +24,18 @@ Unlike the official [`@deepseek-ai/dsh-subagent-codex`](https://www.npmjs.com/pa
 the delegation record). Do not enable both as coding backends in one profile: they would
 offer two competing Codex tools to the model.
 
+## Screenshots
+
+Installed in DSH, a delegation's read-only child session, and the same child session
+continued for a second turn (the screenshots are also attached to the plugin-market
+application):
+
+![The plugin card in DSH Plugins](docs/screenshots/01-plugin-installed.png)
+
+![One delegation's read-only child session](docs/screenshots/02-child-session.png)
+
+![The same child session continued](docs/screenshots/03-child-session-continued.png)
+
 ## The thin shell
 
 The plugin deliberately owns almost nothing about *how* Codex runs. That stays inside the
