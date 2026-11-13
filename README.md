@@ -321,6 +321,23 @@ version, not a documented guarantee.
   scratch brief (always removed, even on failure), its own child session id, and its own
   process state.
 
+## Security
+
+One local `codex` process per delegation, a private `CODEX_HOME`, no runtime
+dependencies, no install scripts, and no network code in the plugin itself.
+
+- Credentials are exported to the child only; the copy of `~/.codex/auth.json`
+  in the private `CODEX_HOME` is mode `600`, and `~/.codex` is never written to.
+- The default sandbox is `workspace-write`; `dangerouslyBypass` is opt-in and
+  documented as dangerous.
+- Logs and the delegation record contain task text and command output; treat
+  `$HOME/.dsh/codex-logs` as sensitive.
+- The Codex child inherits the DSH host environment, exactly as `codex` would
+  inherit a terminal's environment.
+
+Full details, including how to report a vulnerability, are in
+[SECURITY.md](SECURITY.md).
+
 ## Logs and cleanup
 
 `logMode` (default `summary`) decides what one delegation writes to

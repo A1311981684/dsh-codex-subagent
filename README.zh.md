@@ -270,6 +270,19 @@ Codex**：
 - **一个 session 同时只跑一个任务**；除此之外每次新派活互不干扰：自己的临时任务说明文件
   （失败也删）、自己的子会话 id、自己的进程状态。
 
+## 安全
+
+每次派活只起一个本机 `codex` 进程，用私有 `CODEX_HOME`；插件本身没有运行时依赖、
+没有安装脚本、也没有联网代码。
+
+- 凭据只放进子进程环境；复制进私有 `CODEX_HOME` 的 `~/.codex/auth.json` 权限是
+  `600`，`~/.codex` 永远不会被写。
+- 默认沙箱是 `workspace-write`；`dangerouslyBypass` 要显式打开，文档里标了危险。
+- 日志和派活记录里有任务文本和命令输出，`$HOME/.dsh/codex-logs` 请按敏感数据处理。
+- Codex 子进程会继承 DSH 宿主进程的环境，和在终端里直接跑 `codex` 一样。
+
+完整说明和漏洞报告方式见 [SECURITY.md](SECURITY.md)。
+
 ## 日志与清理
 
 `logMode`（默认 `summary`）决定一次派活往
