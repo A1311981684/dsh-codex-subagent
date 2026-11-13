@@ -109,15 +109,11 @@ mounts the plugin (`id: subagent-codex-cli`, `name: dsh-codex-subagent`), which 
 the `codex` tool and projects child sessions, and it shows up as a card under
 **Plugins → Installed** in the web app.
 
-> Not published yet: the npm name and the Git URL below become usable once this package is
-> released and the repository is pushed. Until then install from a local checkout with
-> `file:`.
-
 ```bash
-# from npm (after publication)
+# from npm
 dsh plugin --profile web add dsh-codex-subagent
 
-# from GitHub (after the repository is pushed)
+# from GitHub
 dsh plugin --profile web add git+https://github.com/A1311981684/dsh-codex-subagent.git
 
 # from a local checkout

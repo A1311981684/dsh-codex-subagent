@@ -92,14 +92,11 @@ Codex 自己的 thread 继续用）、**有日志**（summary 或 full，另加�
 装上包就够了，patch 会把插件挂上（`id: subagent-codex-cli`、`name: dsh-codex-subagent`），
 它自己注册 `codex` 工具、自己投影子会话，网页「插件 → 已安装插件」里也会出现它的卡片。
 
-> 尚未发布：下面 npm 名字和 GitHub 地址要等这个包发布、仓库推上去以后才能用。
-> 在那之前用本地目录的 `file:` 方式安装。
-
 ```bash
-# 从 npm 装（发布后）
+# 从 npm 装
 dsh plugin --profile web add dsh-codex-subagent
 
-# 从 GitHub 装（仓库推上去后）
+# 从 GitHub 装
 dsh plugin --profile web add git+https://github.com/A1311981684/dsh-codex-subagent.git
 
 # 从本地目录装
